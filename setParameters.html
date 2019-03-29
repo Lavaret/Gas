@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ustawienie parametrów</title>
+    <link rel="stylesheet" type="text/css" href="styles/custom.css">
+</head>
+<body>
+    <div class="container black-background container-form">
+    	<h1 class="form-header">Parametry</h1>
+        <form action="#">
+            <div class="row">
+                <label for="last_measure_date">Data ostatniego pomiaru</label>
+                <input type="date" class="black-background" id="last_measure_date" name="date">
+            </div>
+            <div class="row">
+                <label for="first_measure_date">Data początkowa</label>
+                <input type="date" class="black-background" id="first_measure_date" name="date">
+            </div>
+            <div class="row">
+                <label for="measure_value">Stan licznika</label>
+                <input type="number" class="black-background" name="value" id="measure_value">
+            </div>
+            <div class="row">
+            	<label for="gas_price">Cena gazu</label>
+            	<input type="number" step="0.00001" name="gas_price" class="black-background" id="gas_price" required="required">
+            </div>
+            <div class="row">
+            	<label for="subscribtion_price">Cena abonamentu</label>
+            	<input type="number" step="0.01" name="subscribtion_price" class="black-background" id="subscribtion_price" required="required">
+            </div>
+            <div class="row">
+            	<label for="distribution_constant_price">Cena przesyłu stałego (dni)</label>
+            	<input type="number" step="0.01" name="distribution_constant_price" class="black-background" id="distribution_constant_price" required="required">
+            </div>
+            <div class="row">
+            	<label for="distribution_variable_price">Cena przesyłu zmiennego (M<sup>3</sup>)</label>
+            	<input type="number" step="0.00001" name="distribution_variable_price" class="black-background" id="distribution_variable_price" required="required">
+            </div>
+            <div class="row">
+            	<label for="conversion_rate">Współczynnik konwersji (m<sup>3</sup>/kwh)</label>
+            	<input type="number" step="0.001" name="conversion_rate" class="black-background" id="conversion_rate" required="required">
+            </div>
+            <div class="row">
+                <input type="submit" value="Zapisz">
+            </div>
+        </form>
+    </div>
+<script>
+
+//renderer action
+	//brings electron to this file
+	const electron = require('electron');
+	let $ = window.$ = require('jquery');
+	//pulls out ipc renderer object
+	//this object is used to send data to main.js file
+	const {ipcRenderer} = electron;
+
+	//catch data from inputs
+	const form = document.querySelector('form');
+	form.addEventListener('submit', submitForm);
+
+	setValues();
+
+	//disable first measure date input if is already set
+	if (localStorage.getItem('firstMeasureDate') !== null) {
+		$('#first_measure_date').attr('disabled', 'disabled');
+	}
+
+	function submitForm(e) {
+		e.preventDefault();
+		//set values to the local storage
+
+		//set dates
+		const lastDate = document.querySelector('#last_measure_date').value;
+		if (lastDate != "") {
+			localStorage.setItem('lastMeasureDate', lastDate);
+		}
+
+
+		const firstDate = document.querySelector('#first_measure_date').value;
+		localStorage.setItem('firstMeasureDate', firstDate);
+
+		//set measure value
+		const measureValue = document.querySelector('#measure_value').value;
+		localStorage.setItem('measureValue', measureValue);
+
+		//set gas price
+		const gasPrice = document.querySelector('#gas_price').value;
+		localStorage.setItem('gasPrice', gasPrice);
+
+		//set subsciption price
+		const subscribtionPrice = document.querySelector('#subscribtion_price').value;
+		localStorage.setItem('subscribtionPrice', subscribtionPrice);
+
+		//set constant distribution
+		const distributionConstant = document.querySelector('#distribution_constant_price').value;
+		localStorage.setItem('distributionConstant', distributionConstant);
+
+		//set variable distribution
+		const distributionVariable = document.querySelector('#distribution_variable_price').value;
+		localStorage.setItem('distributionVariable', distributionVariable);
+
+		//set variable distribution
+		const conversionRate = document.querySelector('#conversion_rate').value;
+		localStorage.setItem('conversionRate', conversionRate);
+
+		//send end of action to main.js
+		ipcRenderer.send('close:window');
+	}
+
+	//put values to the form from local storage
+	function setValues() {
+		document.querySelector('#last_measure_date').value = localStorage.getItem('lastMeasureDate');
+		document.querySelector('#first_measure_date').value = localStorage.getItem('firstMeasureDate');
+		document.querySelector('#measure_value').value = localStorage.getItem('measureValue');
+		document.querySelector('#gas_price').value = localStorage.getItem('gasPrice');
+		document.querySelector('#subscribtion_price').value = localStorage.getItem('subscribtionPrice');
+		document.querySelector('#distribution_constant_price').value = localStorage.getItem('distributionConstant');
+		document.querySelector('#distribution_variable_price').value = localStorage.getItem('distributionVariable');
+		document.querySelector('#conversion_rate').value = localStorage.getItem('conversionRate');
+	}
+</script>
+</body>
+</html>

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <title>Pomiary</title>
+  <!-- styles -->
+  <link rel="stylesheet" href="styles/custom.css">
+  <!--  icons  -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+</head>
+<body>
+  <div>
+    <table id="report_table">
+    	<thead>      
+    		<tr>
+		        <th>Początkowa data</th>
+		        <th>Bieżąca data</th>
+		        <th>Początkowy wskaźnik</th>
+		        <th>Bieżący wskaźnik</th>
+		        <th class="price-col">Cena</th>
+		        <th>Średnie zużycie m<sup>3</sup></th>
+		        <th>Średnie zużycie kWH</th>
+		    </tr>
+		</thead>
+		<tbody></tbody>
+    </table>
+  <div class="message-danger message"></div>
+  </div>
+  <script>
+  	let $ = window.$ = require('jquery');
+
+    //sending data to main.js constants
+    const electron = require('electron');
+    const {ipcRenderer} = electron;
+
+    getAllReports();
+
+    function clickLastRow() {
+    	$('tr:last').on('click', deleteRow);
+    }
+   
+	//add data new table row
+    function showTableRow(cursor) {
+    	let key = cursor.key;
+    	let report = cursor.value;
+     	//creates table row
+		let updateString = 
+		"<tr class='operation-table' id="+'"'+key+'"'+">"+
+			"<td>"+report.oldDate+"</td>"+
+			"<td>"+report.newDate+"</td>"+
+			"<td>"+report.oldMeasure+"</td>"+
+			"<td>"+report.newMeasure+"</td>"+
+			"<td class="+'"'+"price-col"+'"'+">"+changeForPrice(report.price)+"</td>"+
+			"<td>"+changeNumberDot(report.averageM3)+"</td>"+
+			"<td>"+changeNumberDot(report.averageKwh)+"</td>"+
+		"</tr>";
+
+		//adds row to the table
+		$('tbody').append(updateString);
+    }
+
+    function changeForPrice(number) {
+    	number = String(number).split(".");
+
+    	if(number.length == 1) {
+    		number = number[0]+",00 zł"
+    	} else if(number[1].length < 2) {
+    		number = number[0]+","+number[1]+"0 zł";
+    	} else {
+    		number = number[0]+","+number[1]+" zł";
+    	}
+
+    	return number;
+    }
+
+    function changeNumberDot(number) {
+    	number = String(number).replace(".", ",");
+
+    	return number;
+    }
+
+    function deleteRow() {
+    	var confirmed = confirm("Czy jesteś pewny, że chcesz usunąć pomiar?");
+    	if (confirmed) {
+    		deleteRecord(parseInt(this.id));
+    	}
+    }
+
+    function setNewMeasure(element) {
+    	localStorage.setItem('lastMeasureDate', element.newDate);
+    	localStorage.setItem('measureValue', element.newMeasure);
+
+    	ipcRenderer.send('reload:window');
+    }
+
+    //--------------------------------DATABASE-----------------------------//
+
+  	//database connection
+  	function getAllReports() {
+	    //create database connection
+	    var request = window.indexedDB.open("GasProjectDatabase", 3);
+
+	    // Create the schema
+	    request.onupgradeneeded = function() {
+	        var db = request.result;
+	        var store = db.createObjectStore("GasProjectStore", {autoIncrement: true});
+	        var index = store.createIndex("date", "newDate");
+	    };
+
+	    //main operation
+	    request.onsuccess = function() {
+	        // Start a new transaction
+	        var db = request.result;
+	        var tx = db.transaction("GasProjectStore", "readwrite");
+	        var store = tx.objectStore("GasProjectStore");
+	        var index = store.index("date");
+
+			// Get data from database
+			store.openCursor().onsuccess = function(event) {
+		    	var cursor = event.target.result;
+		    	if (cursor) {
+		    		showTableRow(cursor);
+		    		cursor.continue(); 
+		    	}
+			}
+
+	        store.onsuccess = function() {
+	          console.log('success');
+	        }
+
+	        // Close the db when the transaction is done
+	        tx.oncomplete = function() {
+	        	// create clickable last table row when it's loaded
+	        	clickLastRow();
+	            db.close();
+	        };
+	    }
+
+	    //displays error on failed connection
+	    request.onerror = function(event) {
+	      console.error("add error", this.error);
+	     displayActionFailure(this.error);
+	    };
+	}
+
+  	//database connection
+  	function deleteRecord(id) {
+	    //create database connection
+	    var request = window.indexedDB.open("GasProjectDatabase", 3);
+
+	    // Create the schema
+	    request.onupgradeneeded = function() {
+	        var db = request.result;
+	        var store = db.createObjectStore("GasProjectStore", {autoIncrement: true});
+	        var index = store.createIndex("date", "newDate");
+	    };
+
+	    //main operation
+	    request.onsuccess = function() {
+	        // Start a new transaction
+	        var db = request.result;
+	        var tx = db.transaction("GasProjectStore", "readwrite");
+	        var store = tx.objectStore("GasProjectStore");
+	        var index = store.index("date");
+
+			// remove data and send refresh page request
+			var deleteElement = store.delete(id);
+			deleteElement.onsuccess = function(e) {
+				location.reload();
+				actualizeData();
+			}
+
+	        store.onsuccess = function() {
+	          console.log('success');
+	        }
+
+	        // Close the db when the transaction is done
+	        tx.oncomplete = function() {
+	            db.close();
+	        };
+	    }
+
+	    //displays error on failed connection
+	    request.onerror = function(event) {
+	      console.error("add error", this.error);
+	      displayActionFailure(this.error);
+	    };
+	}
+
+	  	//database connection
+  	function actualizeData() {
+	    //create database connection
+	    var request = window.indexedDB.open("GasProjectDatabase", 3);
+
+	    // Create the schema
+	    request.onupgradeneeded = function() {
+	        var db = request.result;
+	        var store = db.createObjectStore("GasProjectStore", {autoIncrement: true});
+	        var index = store.createIndex("date", "newDate");
+	    };
+
+	    //main operation
+	    request.onsuccess = function() {
+	        // Start a new transaction
+	        var db = request.result;
+	        var tx = db.transaction("GasProjectStore", "readwrite");
+	        var store = tx.objectStore("GasProjectStore");
+	        var index = store.index("date");
+
+            //sort by date desc
+            var cursorRequest = index.openCursor(null, 'prev');
+
+            //get data from database
+            cursorRequest.onsuccess = function(event) {
+              var cursor = event.target.result;
+              if(cursor) {
+                setNewMeasure(cursor.value);
+              }
+            }
+
+	        store.onsuccess = function() {
+	          console.log('success');
+	        }
+
+	        // Close the db when the transaction is done
+	        tx.oncomplete = function() {
+	            db.close();
+	        };
+	    }
+
+	    //displays error on failed connection
+	    request.onerror = function(event) {
+	      console.error("add error", this.error);
+	      displayActionFailure(this.error);
+	    };
+	}
+  </script>
+</body>
+</html>
