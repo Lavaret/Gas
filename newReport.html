@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Nowy pomiar</title>
+    <link rel="stylesheet" type="text/css" href="styles/custom.css">
+</head>
+<body>
+    <div class="container container-form black-background full-height">
+        <form action="#">
+            <div class="row">
+                <label for="measure_date">Data pomiaru</label>
+                <input type="date" class="black-background" id="measure_date" name="date">
+            </div>
+            <div class="row">
+                <label for="measure_value">Stan licznika</label>
+                <input type="number" class="black-background" name="value" id="measure_value" required="required">
+            </div>
+            <div class="row">
+                <input type="submit" value="Zapisz">
+            </div>
+        </form>
+    </div>
+<script>
+    let $ = window.$ = require('jquery');
+
+    //sets default present date to the date input
+    Date.prototype.toDateInputValue = (function() {
+        var local = new Date(this);
+        local.setMinutes(this.getMinutes() - this.getTimezoneOffset());
+        return local.toJSON().slice(0,10);
+    });
+
+    document.getElementById('measure_date').value = new Date().toDateInputValue();
+    var lastMeasure = localStorage.getItem('measureValue');
+    $('#measure_value').attr('placeholder', lastMeasure);
+    $('#measure_value').attr('min', lastMeasure);
+
+//renderer action
+	//brings electron to this file
+	const electron = require('electron');
+	//pulls out ipc renderer object
+	//this object is used to send data to main.js file
+	const {ipcRenderer} = electron;
+
+	//catch data from inputs
+	const form = document.querySelector('form');
+	form.addEventListener('submit', submitForm);
+
+	function submitForm(e) {
+        e.preventDefault();
+        let parameters = checkParametersExist();
+
+        if(parameters) {
+            if (localStorage.getItem('firstMeasureDate') === null) {
+                var confirmed = confirm("Nie została ustawiona data początkowa, domyślnie pomiar zostanie rozpoczęty i zakończony na tej samej dacie (datę początkową można ustawić w opcjach). Zapisać pomiar?");
+                if (confirmed) {
+                    //grab input data
+                    const date = document.querySelector('#measure_date').value;
+                    const measureValue = document.querySelector('#measure_value').value;
+                    const measureData = {date: date, value: measureValue};
+                    ipcRenderer.send('measureData:add', measureData);
+                }
+            } else {
+                //grab input data
+                const date = document.querySelector('#measure_date').value;
+                const measureValue = document.querySelector('#measure_value').value;
+                const measureData = {date: date, value: measureValue};
+                ipcRenderer.send('measureData:add', measureData);
+            }
+
+        } else {
+            alert("Brakuje danych, uzupełnij wszystkie parametry w opcje > ustawienie parametrów");
+        }
+
+	}
+
+    function checkParametersExist() {
+        if (localStorage.getItem('distributionConstant') === null || 
+            localStorage.getItem('distributionVariable') === null ||
+            localStorage.getItem('gasPrice') === null ||
+            localStorage.getItem('subscribtionPrice') === null ||
+            localStorage.getItem('conversionRate') === null) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+</script>
+</body>
+</html>

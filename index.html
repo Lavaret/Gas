@@ -1,0 +1,493 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="Gas project">
+
+    <title>Gas project</title>
+
+    <!-- Custom styles for this template -->
+    <link href="styles/custom.css" rel="stylesheet">
+  </head>
+
+  <body>
+
+    <div class="container">
+        <div class="main">
+            <h2 class="main-header">GAS</h2>
+            <canvas id="chart"></canvas>
+            <div class="bottom-bar">
+                <button class="reset-button" id="reset_button">Reset</button>
+                <button class="export-button" id="export_button">Eksport</button>
+                <button class="import-button" id="import_button">Import</button>
+            </div>
+        </div>
+        <div class="right">
+            <div class="right-upper">
+                <h2 class="side-header">Licznik</h2>
+                <h2 class="counter" id="counter">0000000</h2>
+                <p class="parameter-description">Średnie zużycie:</p>
+                <p class="parameter-value" id="whole_kwh">000</p>
+                <p class="parameter-value" id="whole_m3">00</p>
+                <p>Okres czasu</p>
+                <p class="parameter-value" id="whole_time">yy-mm-dd</p>
+                <p>Średnia cena za miesiąc</p>
+                <p class="parameter-value" id="whole_price">00,00 zł</p>
+            </div>
+            <div class="right-lower">
+                <h2 class="side-header">Ostatni pomiar</h3>
+                <p class="parameter-description">Średnie zużycie</p>
+                <p class="parameter-value" id="last-kwh">000</p>
+                <p class="parameter-value" id="last-m3">00</p>
+                <p>Cena</p>
+                <p class="parameter-value" id="last-price">00,00 zł</p>
+                <p>Data ostatniego pomiaru</p>
+                <p class="parameter-value" id="last-date">yy-mm-dd</p>
+            </div>
+        </div>
+    </div> <!-- container -->
+
+    <footer>Gas project</footer>
+
+    <!-- JAVASCRIPTS -->
+
+    <script type="text/javascript" src="services/diffDates.js"></script>
+    <script type="text/javascript" src="services/parametersOperations.js"></script>
+    <script type="text/javascript" src="services/custom.js"></script>
+    <script>
+      // You can also require other files to run in this process
+      require('./renderer.js');
+      require('chart.js');
+
+      //define ipcRenderer
+      const electron = require('electron');
+      const {ipcRenderer} = electron;
+      var fs = require('fs');
+
+      let $ = window.$ = require('jquery');
+
+
+      //------------------------functions calls
+
+      //show summary data
+      showData();
+
+      //-------------------------------get sent data from main.js
+      ipcRenderer.on('measureData:add', function (event,store) {
+        calculateData(store);
+      });
+
+      ipcRenderer.on('file:saved', function(event, store) {
+          alert("Plik został zapisany w: "+store);
+      });
+
+      ipcRenderer.on('file:failed', function(event, store) {
+          alert("Nie udało się zapisać pliku: "+store.code);
+      });
+
+      ipcRenderer.on('export:file', function(event) {
+        exportData();
+      });
+
+
+      //------------------------------BUTTONS HANDLERS
+      //reset button handler
+      $('#reset_button').on('click', function() {
+        var accepted = confirm("Reset licznika spowoduje utratę wszystkich pomiarów, upewnij się, że jest zrobiona kopia zapasowa. Czy chcesz kontynuować?");
+        if(accepted) {
+          clearData();
+        }
+      });
+
+      //export button handler
+      $('#export_button').on('click', exportData)
+
+      //import button handler
+      $('#import_button').on('click', function() {
+        var accepted = confirm("Import danych spowoduje wyczyszczenie wszystkich dotychczasowych pomiarów. Czy chcesz kontynuować?");
+        if (accepted) {
+          ipcRenderer.send('import:file');
+        }
+      })
+
+      //------------------------------FUNCTIONS
+
+      function exportData() {
+        var date = String(getDateAndTime());
+        var fileName = "Gaz_eksport_parametrów_"+date+".txt";
+        var content = "średnie Kwh, średnie m3, nowa data, stara data, nowy pomiar, stary pomiar, cena \r\n";
+        var tableData = {"name": fileName, "content": content};
+        ipcRenderer.send('save:file', tableData);
+        getCursorData(fileName);
+      }
+
+      function saveData(data, fileName) {
+        var content = data.averageKwh+", "+data.averageM3+", "+data.newDate+", "+data.oldDate+", "+data.newMeasure+", "+data.oldMeasure+", "+data.price+"\r\n";
+        var tableData = {"name": fileName, "content": content};
+        ipcRenderer.send('save:file', tableData);
+      }
+
+      function calculateData(data) {
+
+        var parameter = new Parameters(data.date, data.value);
+
+        var dates = parameter.getFormattedDates();
+        var measurements = parameter.getMeasuremetns();
+
+        //get price of gas usage
+        var price = parameter.getFullPrice();
+
+        //get average m3 usage
+        var averageM3 = parameter.getAverageM3();
+
+        //get average kwh usage
+        var averageKwh = parameter.getAverageKwh();
+
+        //from all of these values need to be created json table and whole send to the setData to database fundction 
+        var data = {newDate: dates.new, oldDate: dates.old, newMeasure: measurements.new, oldMeasure: measurements.old, price: price, averageM3: averageM3, averageKwh: averageKwh};
+
+        setData(data);
+
+      }
+
+      function createAllMeasuresSummary(data) {
+        let kwh = 0;
+        let price = 0;
+        var m3 = 0;
+
+        //counter value is the last measurement
+        let counter = localStorage.getItem('measureValue');
+
+        //count sum of the values
+        for (var i = 0, len = data.length; i < len; i++) {
+          kwh += parseFloat(data[i].averageKwh);
+          price += parseFloat(data[i].price);
+          m3 += parseFloat(data[i].averageM3);
+        }
+
+        //counts average from already counted sums
+        kWh = countAvg(kwh);
+        m3 = countAvg(m3);
+
+        //if dates are set there is counted price and generated time message
+        if(checkIfDatesAreSet() === true) {
+          var end = new Date(localStorage.getItem('lastMeasureDate'));
+          var start = new Date(localStorage.getItem('firstMeasureDate'));
+          var text= getCompleteTimeDifference(start, end);
+
+          price = countPrice(price); 
+        } else {
+          price = "-";
+          var text = "-";
+        }
+
+        var dataToDisplay = {"kWH" : kWh, "m3" : m3, "price": price, "time":text, "counter":counter};
+        displayValues(dataToDisplay); 
+        
+        /**
+          Counts average value from value sum nad data elements quantity
+
+          returns float
+        */
+        function countAvg(value) {
+          value = value / data.length;
+          value = Math.floor(value * 100) / 100;
+
+          return value;
+        }
+
+        /**
+          Counts price by dividing price sum by months quantity - price/months
+
+          returns float
+        */
+        function countPrice(priceSum) {
+
+          var months = dateDiffInMonths(start, end);
+          //count average price per month
+          priceSum = priceSum / months;
+
+          //floor price to 2 decimal places
+          priceSum = Math.floor(priceSum * 100) / 100;
+          //replace dot to coma
+          priceSum = String(priceSum).replace(".", ",");
+
+          return priceSum;
+        }
+        
+        /**
+          Displays values from array
+        */
+        function displayValues(values) {
+          $('#whole_kwh').html(changeNumberDot(values.kWH+" kWH"));
+          $('#whole_price').html(values.price+" zł");
+          $('#whole_m3').html(changeNumberDot(values.m3+" m<sup>3</sup>"));
+          $('#counter').html(values.counter);
+          $('#whole_time').html(values.time);
+        }
+      }
+
+      function createLastMeasureSummary(data) {
+        $('#last-kwh').html(changeNumberDot(data.averageKwh+" kWH"));
+        $('#last-date').html(data.newDate);
+        $('#last-m3').html(changeNumberDot(data.averageM3+" m<sup>3</sup>"));
+
+        var price = String(data.price).replace(".", ",");
+        $('#last-price').html(price+" zł");
+      }
+
+ //------------------------CHARTS-----------------------------//
+   function createChart(data) {
+    var ctx = document.getElementById("chart").getContext('2d');
+
+    var labels = new Array();
+    var m3val = new Array;
+
+    for (var i = 0, len = data.length; i < len; i++) {
+      labels.push(data[i].newDate);
+      m3val.push(data[i].averageM3);
+    }
+
+    var myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'średnie m3',
+                data: m3val,
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.2)',
+                    'rgba(54, 162, 235, 0.2)',
+                    'rgba(255, 206, 86, 0.2)',
+                    'rgba(75, 192, 192, 0.2)',
+                    'rgba(153, 102, 255, 0.2)',
+                    'rgba(255, 159, 64, 0.2)'
+                ],
+                borderColor: [
+                    'rgba(255,99,132,1)',
+                    'rgba(54, 162, 235, 1)',
+                    'rgba(255, 206, 86, 1)',
+                    'rgba(75, 192, 192, 1)',
+                    'rgba(153, 102, 255, 1)',
+                    'rgba(255, 159, 64, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                yAxes: [{
+                    ticks: {
+                        beginAtZero:true
+                    }
+                }]
+            },
+            legend: {
+              onClick: (e) => e.stopPropagation()
+            }
+        }
+    });
+   }
+
+//----------------------------DATABASE---------------------------//
+
+      //database connection
+      function setData(data) {
+        //create database connection
+        var request = window.indexedDB.open("GasProjectDatabase", 3);
+
+        // Create the schema
+        request.onupgradeneeded = function() {
+            var db = request.result;
+            var store = db.createObjectStore("GasProjectStore", {autoIncrement: true});
+            var index = store.createIndex("date", "newDate");
+        };
+
+        //main operation
+        request.onsuccess = function() {
+            // Start a new transaction
+            var db = request.result;
+            var tx = db.transaction("GasProjectStore", "readwrite");
+            var store = tx.objectStore("GasProjectStore");
+            var index = store.index("date");
+
+            // Add data to the database
+            store.put(data);
+
+            //set new values for last measure date and last measurement
+            localStorage.setItem('lastMeasureDate', data.newDate);
+            localStorage.setItem('measureValue', data.newMeasure);
+
+            // if not exist set the first measure date
+            if(localStorage.getItem('firstMeasureDate') === null) {
+              localStorage.setItem('firstMeasureDate', data.newDate);
+            }
+
+            store.onsuccess = function() {
+              console.log('success');
+            }
+
+            // Close the db when the transaction is done
+            tx.oncomplete = function() {
+                db.close();
+            };
+        }
+
+        //displays error on failed connection
+        request.onerror = function(event) {
+          console.error("add error", this.error);
+          displayActionFailure(this.error);
+        };
+      }
+
+
+      ///----- reset button action ------//
+
+      function clearData() {
+        //create database connection
+        var request = window.indexedDB.open("GasProjectDatabase", 3);
+
+        // Create the schema
+        request.onupgradeneeded = function() {
+            var db = request.result;
+            var store = db.createObjectStore("GasProjectStore", {autoIncrement: true});
+            var index = store.createIndex("date", "newDate");
+        };
+
+        //main operation
+        request.onsuccess = function() {
+            // Start a new transaction
+            var db = request.result;
+            var tx = db.transaction("GasProjectStore", "readwrite");
+            var store = tx.objectStore("GasProjectStore");
+            var index = store.index("date");
+
+            // Add data to the database
+            store.clear();
+
+            //set new values for last measure date and last measurement
+            let date = new Date().toDateInputValue();
+            localStorage.setItem('measureValue', 0);
+            localStorage.removeItem('firstMeasureDate');
+            localStorage.removeItem('lastMeasureDate');
+
+            ipcRenderer.send('reload:window');
+
+            store.onsuccess = function() {
+              console.log('success');
+            }
+
+            // Close the db when the transaction is done
+            tx.oncomplete = function() {
+                db.close();
+            };
+        }
+
+        //displays error on failed connection
+        request.onerror = function(event) {
+          console.error("add error", this.error);
+          displayActionFailure(this.error);
+        };
+      }
+
+//----show summary data-------//
+      function showData() {
+        //create database connection
+        var request = window.indexedDB.open("GasProjectDatabase", 3);
+
+        // Create the schema
+        request.onupgradeneeded = function() {
+            var db = request.result;
+            var store = db.createObjectStore("GasProjectStore", {autoIncrement: true});
+            var index = store.createIndex("date", "newDate");
+        };
+
+        //main operation
+        request.onsuccess = function() {
+            // Start a new transaction
+            var db = request.result;
+            var tx = db.transaction("GasProjectStore", "readwrite");
+            var store = tx.objectStore("GasProjectStore");
+            var index = store.index("date");
+
+            var allData = store.getAll();
+            
+            allData.onsuccess = function() {
+              createAllMeasuresSummary(allData.result);
+              createChart(allData.result);
+            }
+
+            //sort by date desc
+            var cursorRequest = index.openCursor(null, 'prev');
+
+            //get data from database
+            cursorRequest.onsuccess = function(event) {
+              var cursor = event.target.result;
+              if(cursor) {
+                createLastMeasureSummary(cursor.value);
+              }
+            }
+
+            // Close the db when the transaction is done
+            tx.oncomplete = function() {
+                db.close();
+            };
+        }
+
+        //displays error on failed connection
+        request.onerror = function(event) {
+          console.error("add error", this.error);
+          displayActionFailure(this.error);
+        };
+      }
+
+//----save data-------//
+      function getCursorData(fileName) {
+        //create database connection
+        var request = window.indexedDB.open("GasProjectDatabase", 3);
+
+        // Create the schema
+        request.onupgradeneeded = function() {
+            var db = request.result;
+            var store = db.createObjectStore("GasProjectStore", {autoIncrement: true});
+            var index = store.createIndex("date", "newDate");
+        };
+        
+        //main operation
+        request.onsuccess = function() {
+            // Start a new transaction
+            var db = request.result;
+            var tx = db.transaction("GasProjectStore", "readwrite");
+            var store = tx.objectStore("GasProjectStore");
+            var index = store.index("date");
+
+
+            //get data from database
+            store.openCursor().onsuccess = function(event) {
+              var cursor = event.target.result;
+              if(cursor) {
+                saveData(cursor.value, fileName);
+                cursor.continue();
+              } else {
+                ipcRenderer.send('getSavedFilePath', fileName);
+              }
+            }
+
+            // Close the db when the transaction is done
+            tx.oncomplete = function() {
+                db.close();
+            };
+        }
+
+        //displays error on failed connection
+        request.onerror = function(event) {
+          console.error("add error", this.error);
+          displayActionFailure(this.error);
+        };
+      }
+
+    </script>
+  </body>
+</html>

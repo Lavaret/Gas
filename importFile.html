@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Import pliku</title>
+    <link rel="stylesheet" type="text/css" href="styles/custom.css">
+</head>
+<body>
+    <div class="container container-form black-background full-height">
+        <form action="#" id="import_file_form">
+            <div class="row">
+                <label for="file_path">Nazwa pliku</label>
+                <input type="file" class="black-background" id="file_path" name="file_path" accept=".txt">
+            </div>
+            <div class="row">
+                <input type="submit" value="Zapisz">
+            </div>
+        </form>
+    </div>
+<script>
+    let $ = window.$ = require('jquery');
+    var fs = require('fs');
+    const electron = require('electron');
+    const {ipcRenderer} = electron;
+
+    $('#import_file_form').submit(function(event) {
+        event.preventDefault();
+
+        //finds file path
+        var path = ($('#file_path'))[0].files[0].path;
+        var content;
+
+        //uses file system to read whole content of the file
+        fs.readFile(String(path), "utf8", function read(err, data) {
+            if (err) {
+                console.log(err);
+            }
+
+            setData(data);
+        });
+    })
+
+
+    ///--------------DATABASE--------------------------//
+
+          //database connection
+      function setData(data) {
+        //create database connection
+        var request = window.indexedDB.open("GasProjectDatabase", 3);
+
+        // Create the schema
+        request.onupgradeneeded = function() {
+            var db = request.result;
+            var store = db.createObjectStore("GasProjectStore", {autoIncrement: true});
+            var index = store.createIndex("date", "newDate");
+        };
+
+        //main operation
+        request.onsuccess = function() {
+            // Start a new transaction
+            var db = request.result;
+            var tx = db.transaction("GasProjectStore", "readwrite");
+            var store = tx.objectStore("GasProjectStore");
+            var index = store.index("date");
+
+            store.clear();
+
+            //content of the file is separatet by new line sign
+            var lines = data.split('\n');
+            for (var line = 1; line < lines.length -1; line++) {
+                //values in every line are separated by coma
+                var row = lines[line].split(',');
+                var newDate = row[2];
+                var oldDate = row[3];
+                var newMeasure = row[4];
+                var oldMeasure = row[5];
+                var price = parseFloat(row[6]);
+                var averageKwh = parseFloat(row[0]);
+                var averageM3 = parseFloat(row[1]);
+
+                //set local storage values from first and last measurement
+                if (line == 0) {
+                    //set first measurement date
+                    localStorage.setItem('firstMeasureDate', row[3]);
+                }
+
+                if (line == lines.length -2) {
+                    //set last measurement date and value
+                    localStorage.setItem('lastMeasureDate', row[2]);
+                    localStorage.setItem('measureValue', row[4]);
+                }
+
+                var measurement = {newDate: newDate, oldDate: oldDate, newMeasure: newMeasure, oldMeasure: oldMeasure, price: price, averageM3: averageM3, averageKwh: averageKwh};
+
+                // Add data to the database
+                store.put(measurement);           
+
+                store.onsuccess = function() {
+                    console.log('success');
+                }
+
+            }
+            
+            // Close the db when the transaction is done
+            tx.oncomplete = function() {
+                db.close();
+                ipcRenderer.send('close:window');
+            };
+        }
+
+        //displays error on failed connection
+        request.onerror = function(event) {
+          console.error("add error", this.error);
+          displayActionFailure(this.error);
+        };
+      }
+
+</script>
+</body>
+</html>
