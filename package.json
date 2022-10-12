@@ -24,7 +24,7 @@
   "license": "CC0-1.0",
   "devDependencies": {
     "electron": "^1.8.4",
-    "electron-packager": "^12.1.0"
+    "electron-packager": "^16.0.0"
   },
   "dependencies": {
     "chart.js": "^2.7.2",
